@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from src.test import build_test_parser, run_testing
-from src.train import build_train_parser, run_training
+from .test import build_test_parser, run_testing
+from .train import build_train_parser, run_training
 
 
 def main() -> None:

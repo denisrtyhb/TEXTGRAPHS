@@ -13,9 +13,9 @@ from sklearn.metrics import f1_score
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from src.dataset import LoaderBundle, get_loaders
-from src.device import resolve_device
-from src.model import BertSimpleClassifier, build_classifier
+from .dataset import LoaderBundle, get_loaders
+from .device import resolve_device
+from .model import BertSimpleClassifier, build_classifier
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader

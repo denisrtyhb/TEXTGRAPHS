@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from transformers import PreTrainedTokenizerBase
 
-from src.device import resolve_device
+from .device import resolve_device
 
 
 def linearize_graph(graph_dict: dict[str, Any], sep_token: str) -> str:
