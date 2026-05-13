@@ -10,9 +10,9 @@ import pandas as pd
 import torch
 from transformers import AutoTokenizer
 
-from .dataset import LoaderBundle, get_loaders
-from .device import resolve_device
-from .model import BertSimpleClassifier, build_classifier
+from dataset import LoaderBundle, get_loaders
+from device import resolve_device
+from model import BertSimpleClassifier, build_classifier
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader
