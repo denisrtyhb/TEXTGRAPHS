@@ -30,7 +30,8 @@ def train_epoch(
     model.train()
     epoch_loss = 0.0
     num_batches = 0
-    for batch in tqdm(data_loader, desc="train", leave=False):
+    progress = tqdm(data_loader, desc="train", leave=False, dynamic_ncols=True)
+    for batch in progress:
         optimizer.zero_grad(set_to_none=True)
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
@@ -39,9 +40,14 @@ def train_epoch(
         loss = criterion(logits, labels)
         loss.backward()
         optimizer.step()
-        epoch_loss += loss.item()
+        batch_loss = loss.item()
         num_batches += 1
-    return epoch_loss / max(num_batches, 1)
+        epoch_loss += batch_loss
+        avg_loss = epoch_loss / num_batches
+        progress.set_postfix(avg_loss=f"{avg_loss:.4f}", last=f"{batch_loss:.4f}")
+    mean_loss = epoch_loss / max(num_batches, 1)
+    print(f"train epoch mean loss: {mean_loss:.4f} ({num_batches} batches)")
+    return mean_loss
 
 
 def val_epoch(
@@ -145,6 +151,11 @@ def build_train_parser() -> argparse.ArgumentParser:
         default="auto",
         help="Device: auto (cuda/mps/cpu), cpu, cuda, cuda:N, mps, …",
     )
+    parser.add_argument(
+        "--train-positives-only",
+        action="store_true",
+        help="Training split: keep only rows with correct=True. Val and test use all rows.",
+    )
     return parser
 
 
@@ -167,6 +178,7 @@ def run_training(args: argparse.Namespace) -> None:
         tokenizer_truncation=args.truncation,
         graph_only=args.graph_only,
         device=device,
+        train_positives_only=args.train_positives_only,
     )
 
     model = build_classifier(args.model_name, dropout=args.dropout).to(device)

@@ -148,6 +148,7 @@ def get_loaders(
     tokenizer_truncation: str = "only_second",
     graph_only: bool = False,
     device: str | torch.device | None = None,
+    train_positives_only: bool = False,
 ) -> LoaderBundle:
     """
     Load TSVs, question-level train/dev split, linearize graphs, and build DataLoaders.
@@ -155,6 +156,9 @@ def get_loaders(
     Mirrors ``baselines/bert_baselines.ipynb`` (paths: ``data/tsv/train.tsv``, ``test.tsv``).
 
     ``device``: pass the same training/inference device to enable ``pin_memory`` on CUDA.
+
+    ``train_positives_only``: if True, drop rows with ``correct`` False from the **train** split only;
+    validation and test loaders are unchanged.
     """
     if device is None:
         pin_memory = False
@@ -171,6 +175,16 @@ def get_loaders(
     train_df["label"] = train_df["correct"].astype(np.float32)
     dev_df["label"] = dev_df["correct"].astype(np.float32)
     test_df["label"] = np.zeros(test_df.shape[0], dtype=np.float32)
+
+    if train_positives_only:
+        n_train_before = len(train_df)
+        train_df = train_df.loc[train_df["label"] > 0.5].copy()
+        print(
+            f"train-positives-only: kept {len(train_df)} / {n_train_before} train rows "
+            "(correct=True only; val/test unchanged)."
+        )
+        if len(train_df) == 0:
+            raise ValueError("train-positives-only removed all training rows")
 
     train_df["graph"] = train_df["graph"].apply(parse_graph_cell)
     dev_df["graph"] = dev_df["graph"].apply(parse_graph_cell)

@@ -75,6 +75,10 @@ def _default_paths(project_root: Path) -> tuple[Path, Path]:
     return data / "train.tsv", data / "test.tsv"
 
 
+def _default_output_from_checkpoint(project_root: Path, checkpoint: Path) -> Path:
+    return project_root / "predictions" / f"{checkpoint.stem}_preds.tsv"
+
+
 def build_test_parser() -> argparse.ArgumentParser:
     project_root = Path(__file__).resolve().parent.parent
     train_default, test_default = _default_paths(project_root)
@@ -88,7 +92,8 @@ def build_test_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         type=Path,
-        default=project_root / "predictions_test.tsv",
+        default=None,
+        help="Output TSV (default: predictions/<checkpoint_filename_stem>_preds.tsv under project root).",
     )
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--max-length", type=int, default=128)
@@ -113,6 +118,13 @@ def build_test_parser() -> argparse.ArgumentParser:
 
 
 def run_testing(args: argparse.Namespace) -> None:
+    project_root = Path(__file__).resolve().parent.parent
+    output_path = (
+        args.output
+        if args.output is not None
+        else _default_output_from_checkpoint(project_root, args.checkpoint)
+    )
+
     device = resolve_device(args.device)
     print(f"Using device {device} (requested {args.device!r})")
 
@@ -146,9 +158,9 @@ def run_testing(args: argparse.Namespace) -> None:
         device,
         one_yes_per_question=args.one_yes_per_question,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    submission.to_csv(args.output, sep="\t", index=False)
-    print(f"Wrote {len(submission)} rows to {args.output}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    submission.to_csv(output_path, sep="\t", index=False)
+    print(f"Wrote {len(submission)} rows to {output_path}")
 
 
 def main(argv: list[str] | None = None) -> None:
