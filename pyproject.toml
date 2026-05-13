@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+# setuptools>=69: editable/metadata fixes; discovery below avoids "src layout" confusion
+requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -20,5 +21,9 @@ dependencies = [
 [project.scripts]
 textgraphs = "src.main:main"
 
-[tool.setuptools]
-packages = ["src"]
+# The installable package is a top-level folder literally named "src". setuptools
+# otherwise treats a top-level src/ as "src layout" and looks for *nested* packages
+# (e.g. src/mypkg/), finds none, and editable metadata can fail with no .egg-info.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src"]
