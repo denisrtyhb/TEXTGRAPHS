@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -93,23 +92,14 @@ def train(
         train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
         val_loss, val_f1 = val_epoch(model, val_loader, criterion, device)
         elapsed = time.time() - start
-        logging.info(
-            "Epoch %d/%d | %.1fs | train_loss=%.4f val_loss=%.4f val_f1=%.4f",
-            epoch + 1,
-            n_epochs,
-            elapsed,
-            train_loss,
-            val_loss,
-            val_f1,
+        print(
+            f"Epoch {epoch + 1}/{n_epochs} | {elapsed:.1f}s | "
+            f"train_loss={train_loss:.4f} val_loss={val_loss:.4f} val_f1={val_f1:.4f}"
         )
         if val_f1 > best_f1:
             best_f1 = val_f1
             torch.save(model.state_dict(), checkpoint_path)
-            logging.info(
-                "Saved new best checkpoint (f1=%.4f) -> %s",
-                val_f1,
-                checkpoint_path,
-            )
+            print(f"Saved new best checkpoint (f1={val_f1:.4f}) -> {checkpoint_path}")
 
 
 def _default_paths(project_root: Path) -> tuple[Path, Path]:
@@ -159,12 +149,8 @@ def build_train_parser() -> argparse.ArgumentParser:
 
 
 def run_training(args: argparse.Namespace) -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-    )
     device = resolve_device(args.device)
-    logging.info("Using device %s (requested %r)", device, args.device)
+    print(f"Using device {device} (requested {args.device!r})")
 
     torch.manual_seed(args.seed)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)

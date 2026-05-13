@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from typing import Optional
 
@@ -196,11 +195,6 @@ def run_evaluation(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
     args = parse_args()
     run_evaluation(args)
 

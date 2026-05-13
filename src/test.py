@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,16 +37,11 @@ def _log_one_yes_per_question_stats(test_frame: pd.DataFrame) -> None:
     n_rows = len(test_frame)
     avg_candidates = float(sizes.mean())
     n_single_candidate = int((sizes == 1).sum())
-    logging.info(
-        "one-yes-per-question: %d questions, %d total rows, mean candidates per question: %.4f",
-        n_questions,
-        n_rows,
-        avg_candidates,
+    print(
+        f"one-yes-per-question: {n_questions} questions, {n_rows} total rows, "
+        f"mean candidates per question: {avg_candidates:.4f}"
     )
-    logging.info(
-        "one-yes-per-question: questions with exactly 1 answer candidate: %d",
-        n_single_candidate,
-    )
+    print(f"one-yes-per-question: questions with exactly 1 answer candidate: {n_single_candidate}")
 
 
 def run_test_predictions(
@@ -119,12 +113,8 @@ def build_test_parser() -> argparse.ArgumentParser:
 
 
 def run_testing(args: argparse.Namespace) -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-    )
     device = resolve_device(args.device)
-    logging.info("Using device %s (requested %r)", device, args.device)
+    print(f"Using device {device} (requested {args.device!r})")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     loaders: LoaderBundle = get_loaders(
@@ -158,7 +148,7 @@ def run_testing(args: argparse.Namespace) -> None:
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(args.output, sep="\t", index=False)
-    logging.info("Wrote %d rows to %s", len(submission), args.output)
+    print(f"Wrote {len(submission)} rows to {args.output}")
 
 
 def main(argv: list[str] | None = None) -> None:
