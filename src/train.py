@@ -12,12 +12,16 @@ from sklearn.metrics import f1_score
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from dataset import LoaderBundle, get_loaders
-from device import resolve_device
-from model import BertSimpleClassifier, build_classifier
+from .dataset import ALLOWED_DATASET_IDS, LoaderBundle, get_loaders
+from .device import resolve_device
+from .model import BertSimpleClassifier, build_classifier
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader
+
+
+MOCK_TRAIN_MAX_BATCHES = 10
+MOCK_VAL_MAX_BATCHES = 1
 
 
 def train_epoch(
@@ -26,6 +30,8 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    *,
+    max_batches: int | None = None,
 ) -> float:
     model.train()
     epoch_loss = 0.0
@@ -45,6 +51,8 @@ def train_epoch(
         epoch_loss += batch_loss
         avg_loss = epoch_loss / num_batches
         progress.set_postfix(avg_loss=f"{avg_loss:.4f}", last=f"{batch_loss:.4f}")
+        if max_batches is not None and num_batches >= max_batches:
+            break
     mean_loss = epoch_loss / max(num_batches, 1)
     print(f"train epoch mean loss: {mean_loss:.4f} ({num_batches} batches)")
     return mean_loss
@@ -55,12 +63,15 @@ def val_epoch(
     data_loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    *,
+    max_batches: int | None = None,
 ) -> tuple[float, float]:
     model.eval()
     epoch_loss = 0.0
     true_labels: list[float] = []
     pred_labels: list[int] = []
 
+    n_batches = 0
     with torch.no_grad():
         for batch in data_loader:
             input_ids = batch["input_ids"].to(device)
@@ -73,10 +84,14 @@ def val_epoch(
             pred_labels.extend(batch_pred)
             loss = criterion(logits, labels_dev)
             epoch_loss += loss.item()
+            n_batches += 1
+            if max_batches is not None and n_batches >= max_batches:
+                break
 
-    num_batches = max(len(data_loader), 1)
-    val_f1 = f1_score(true_labels, pred_labels)
-    return epoch_loss / num_batches, val_f1
+    if not true_labels:
+        return 0.0, 0.0
+    val_f1 = f1_score(true_labels, pred_labels, zero_division=0)
+    return epoch_loss / max(n_batches, 1), val_f1
 
 
 def train(
@@ -88,6 +103,9 @@ def train(
     n_epochs: int,
     checkpoint_path: Path,
     device: torch.device,
+    *,
+    max_train_batches: int | None = None,
+    max_val_batches: int | None = None,
 ) -> None:
     best_f1 = 0.0
     checkpoint_path = Path(checkpoint_path)
@@ -95,8 +113,12 @@ def train(
 
     for epoch in range(n_epochs):
         start = time.time()
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
-        val_loss, val_f1 = val_epoch(model, val_loader, criterion, device)
+        train_loss = train_epoch(
+            model, train_loader, optimizer, criterion, device, max_batches=max_train_batches
+        )
+        val_loss, val_f1 = val_epoch(
+            model, val_loader, criterion, device, max_batches=max_val_batches
+        )
         elapsed = time.time() - start
         print(
             f"Epoch {epoch + 1}/{n_epochs} | {elapsed:.1f}s | "
@@ -136,25 +158,20 @@ def build_train_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument(
-        "--context-key",
-        default="linearized_graph",
-        help="DataFrame column paired with question (e.g. answerEntity or linearized_graph).",
+        "--dataset",
+        choices=list(ALLOWED_DATASET_IDS),
+        default=ALLOWED_DATASET_IDS[0],
+        help="Built-in corpus / tokenization preset (see src.dataset.get_loaders).",
     )
-    parser.add_argument(
-        "--truncation",
-        default="only_second",
-        help="Tokenizer truncation strategy (use only_first for text-only baseline).",
-    )
-    parser.add_argument("--graph-only", action="store_true")
     parser.add_argument(
         "--device",
         default="auto",
         help="Device: auto (cuda/mps/cpu), cpu, cuda, cuda:N, mps, …",
     )
     parser.add_argument(
-        "--train-positives-only",
+        "--mock",
         action="store_true",
-        help="Training split: keep only rows with correct=True. Val and test use all rows.",
+        help="Smoke mode: tiny data subset, 10 train batches, 1 val batch, 1 epoch.",
     )
     return parser
 
@@ -165,20 +182,25 @@ def run_training(args: argparse.Namespace) -> None:
 
     torch.manual_seed(args.seed)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    mock = getattr(args, "mock", False)
+    if mock:
+        print(
+            f"mock: training with at most {MOCK_TRAIN_MAX_BATCHES} train batches and "
+            f"{MOCK_VAL_MAX_BATCHES} val batch(es), 1 epoch"
+        )
+
     loaders: LoaderBundle = get_loaders(
         str(args.train_tsv),
         str(args.test_tsv),
-        tokenizer=tokenizer,
+        tokenizer,
+        dataset=args.dataset,
         batch_size=args.batch_size,
         max_length=args.max_length,
         train_ratio=args.train_ratio,
         seed=args.seed,
         num_workers=args.num_workers,
-        context_key=args.context_key,
-        tokenizer_truncation=args.truncation,
-        graph_only=args.graph_only,
         device=device,
-        train_positives_only=args.train_positives_only,
+        mock=mock,
     )
 
     model = build_classifier(args.model_name, dropout=args.dropout).to(device)
@@ -190,9 +212,11 @@ def run_training(args: argparse.Namespace) -> None:
         loaders.val,
         optimizer,
         criterion,
-        n_epochs=args.epochs,
+        n_epochs=1 if mock else args.epochs,
         checkpoint_path=args.checkpoint,
         device=device,
+        max_train_batches=MOCK_TRAIN_MAX_BATCHES if mock else None,
+        max_val_batches=MOCK_VAL_MAX_BATCHES if mock else None,
     )
 
 

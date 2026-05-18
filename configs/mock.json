@@ -1,0 +1,19 @@
+{
+  "mock": true,
+  "train_tsv": "data/tsv/train.tsv",
+  "test_tsv": "data/tsv/test.tsv",
+  "model_name": "sentence-transformers/all-mpnet-base-v2",
+  "checkpoint": "weights/mock-checkpoint.pt",
+  "batch_size": 2,
+  "epochs": 1,
+  "max_length": 128,
+  "lr": 3e-5,
+  "dropout": 0.2,
+  "train_ratio": 0.9,
+  "seed": 42,
+  "num_workers": 0,
+  "dataset": "linearized_graph",
+  "device": "cpu",
+  "one_yes_per_question": false,
+  "output": null
+}

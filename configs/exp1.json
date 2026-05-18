@@ -1,0 +1,20 @@
+{
+  "_comment": "Example train config; extra keys are ignored by main.py for the given mode.",
+  "experiment_name": "baseline-mpnet",
+  "unused_note": 42,
+  "train_tsv": "data/tsv/train.tsv",
+  "test_tsv": "data/tsv/test.tsv",
+  "model_name": "sentence-transformers/all-mpnet-base-v2",
+  "checkpoint": "weights/best-val-baseline.pt",
+  "epochs": 5,
+  "batch_size": 32,
+  "lr": 3e-5,
+  "dropout": 0.2,
+  "max_length": 128,
+  "train_ratio": 0.9,
+  "seed": 42,
+  "num_workers": 0,
+  "dataset": "linearized_graph",
+  "device": "auto",
+  "mock": false
+}

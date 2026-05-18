@@ -1,0 +1,20 @@
+{
+  "_comment": "nlp_enjoyers-style Text+Graph: first sequence Eq: question, second linearized_graph; edges joined with '; '. At test/eval, use one_yes_per_question=true for ranking-style argmax per question.",
+  "dataset": "nlp_enjoyers_dataset",
+  "train_tsv": "data/tsv/train.tsv",
+  "test_tsv": "data/tsv/test.tsv",
+  "model_name": "sentence-transformers/all-mpnet-base-v2",
+  "checkpoint": "weights/nlp-enjoyers-baseline.pt",
+  "epochs": 5,
+  "batch_size": 32,
+  "lr": 3e-5,
+  "dropout": 0.2,
+  "max_length": 128,
+  "train_ratio": 0.9,
+  "seed": 42,
+  "num_workers": 0,
+  "device": "auto",
+  "mock": false,
+  "output": null,
+  "one_yes_per_question": true
+}

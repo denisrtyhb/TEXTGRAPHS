@@ -9,9 +9,9 @@ import pandas as pd
 import torch
 from transformers import AutoTokenizer
 
-from dataset import LoaderBundle, get_loaders
-from device import resolve_device
-from model import BertSimpleClassifier, build_classifier
+from .dataset import ALLOWED_DATASET_IDS, LoaderBundle, get_loaders
+from .device import resolve_device
+from .model import BertSimpleClassifier, build_classifier
 
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader
@@ -101,9 +101,11 @@ def build_test_parser() -> argparse.ArgumentParser:
     parser.add_argument("--train-ratio", type=float, default=0.9)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--context-key", default="linearized_graph")
-    parser.add_argument("--truncation", default="only_second")
-    parser.add_argument("--graph-only", action="store_true")
+    parser.add_argument(
+        "--dataset",
+        choices=list(ALLOWED_DATASET_IDS),
+        default=ALLOWED_DATASET_IDS[0],
+    )
     parser.add_argument(
         "--device",
         default="auto",
@@ -113,6 +115,11 @@ def build_test_parser() -> argparse.ArgumentParser:
         "--one-yes-per-question",
         action="store_true",
         help="Within each question, set prediction=1 only for the candidate with highest logit; others 0.",
+    )
+    parser.add_argument(
+        "--mock",
+        action="store_true",
+        help="Smoke mode: subset test set to 10 questions for fast inference.",
     )
     return parser
 
@@ -129,19 +136,22 @@ def run_testing(args: argparse.Namespace) -> None:
     print(f"Using device {device} (requested {args.device!r})")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    mock = getattr(args, "mock", False)
+    if mock:
+        print("mock: inference on at most 10 questions (subset of test TSV)")
+
     loaders: LoaderBundle = get_loaders(
         str(args.train_tsv),
         str(args.test_tsv),
-        tokenizer=tokenizer,
+        tokenizer,
+        dataset=args.dataset,
         batch_size=args.batch_size,
         max_length=args.max_length,
         train_ratio=args.train_ratio,
         seed=args.seed,
         num_workers=args.num_workers,
-        context_key=args.context_key,
-        tokenizer_truncation=args.truncation,
-        graph_only=args.graph_only,
         device=device,
+        mock=mock,
     )
 
     if args.one_yes_per_question:
