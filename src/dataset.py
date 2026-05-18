@@ -17,6 +17,15 @@ from transformers import PreTrainedTokenizerBase
 from .device import resolve_device
 
 
+def _wikidata_graph_label_text(value: Any) -> str:
+    """Normalize node / edge labels from JSON (may be missing, NaN, or non-string)."""
+    if pd.api.types.is_scalar(value) and pd.isna(value):
+        return ""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
 def linearize_graph(graph_dict: dict[str, Any], sep_token: str) -> str:
     """Turn graph JSON dict into a linearized string (baseline notebook), edges concatenated loosely."""
     return _linearize_graph_from_edges(graph_dict, sep_token, join_edges=lambda parts: "".join(f" {p} " for p in parts))
@@ -46,15 +55,16 @@ def _linearize_graph_from_edges(
     edges: list[str] = []
     for n_id, node_dict in enumerate(nodes):
         links = src_node_id2links.get(n_id, [])
-        start_label = node_dict["label"]
+        start_label = _wikidata_graph_label_text(node_dict["label"])
         if node_dict["type"] == "ANSWER_CANDIDATE_ENTITY":
             start_label = f"{sep_token} {start_label} {sep_token}"
         for link_dict in links:
             target = nodes[link_dict["target"]]
-            target_label = target["label"]
+            target_label = _wikidata_graph_label_text(target["label"])
             if target["type"] == "ANSWER_CANDIDATE_ENTITY":
                 target_label = f"{sep_token} {target_label} {sep_token}"
-            triple = f"{start_label.strip()}, {link_dict['label']}, {target_label.strip()}".strip()
+            rel = _wikidata_graph_label_text(link_dict["label"])
+            triple = f"{start_label.strip()}, {rel}, {target_label.strip()}".strip()
             edges.append(triple)
     return join_edges(edges)
 
