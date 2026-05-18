@@ -28,17 +28,13 @@ def _format_tensor_line(name: str, t: torch.Tensor, tokenizer: Any) -> str:
     return "; ".join(bits)
 
 
-def _print_sample(
-    index: int,
-    item: dict[str, Any],
-    tokenizer: Any,
-) -> None:
-    print(f"Element {index + 1}")
+def _print_heading_and_item(heading: str, item: dict[str, Any], tokenizer: Any) -> None:
+    print(heading)
     for key, value in item.items():
         if isinstance(value, torch.Tensor):
-            print(f"{key}: {_format_tensor_line(key, value, tokenizer)}")
+            print(f"  {key}: {_format_tensor_line(key, value, tokenizer)}")
         else:
-            print(f"{key}: {value!r}")
+            print(f"  {key}: {value!r}")
 
 
 def run_print_dataset(args: argparse.Namespace) -> None:
@@ -58,7 +54,15 @@ def run_print_dataset(args: argparse.Namespace) -> None:
     print(f"Training dataset size: {len(dataset)} (showing first {n} elements)\n")
     for i in range(n):
         sample = dataset[i]
-        _print_sample(i, sample, tokenizer)
+        if isinstance(sample, tuple) and len(sample) == 2:
+            pos, neg = sample
+            print(f"Pair index {i} (positive + negative)\n")
+            _print_heading_and_item(f"Pair {i + 1} — positive", pos, tokenizer)
+            print()
+            _print_heading_and_item(f"Pair {i + 1} — negative", neg, tokenizer)
+        else:
+            assert isinstance(sample, dict)
+            _print_heading_and_item(f"Element {i + 1}", sample, tokenizer)
         if i + 1 < n:
             print()
 

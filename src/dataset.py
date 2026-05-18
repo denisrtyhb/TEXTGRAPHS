@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-"""Data loading: ``get_loaders`` / ``get_dataset``. Presets ``linearized_graph`` (default) vs
-``nlp_enjoyers_dataset`` (Eq: prefix + ``; ``-separated edges). ``ALLOWED_DATASET_IDS``: valid preset ids."""
+"""Data loading: ``get_loaders`` / ``get_dataset``. Presets ``linearized_graph`` (default),
+``nlp_enjoyers_dataset``, and ``nlp_enjoyers_dataset_pairs`` (train: pos/neg tuples + pair collate)."""
 
 import random
 from dataclasses import dataclass
@@ -139,11 +139,95 @@ class QuestionAnswerDataset(Dataset):
         }
 
 
+class PositiveNegativePairDataset(Dataset):
+    """Train subset: ``__getitem__(i)`` is ``(positive_row_i, negative_row_i)`` (two batch dict tensors each)."""
+
+    def __init__(
+        self,
+        train_df: pd.DataFrame,
+        tokenizer: PreTrainedTokenizerBase,
+        max_length: int,
+        context_key: str = "linearized_graph",
+        tokenizer_truncation: str = "only_second",
+        graph_only: bool = False,
+        question_prefix: str | None = None,
+        *,
+        pairing_seed: int,
+    ):
+        super().__init__()
+        pos_df = train_df.loc[train_df["label"] > 0.5].copy().reset_index(drop=True)
+        neg_df = train_df.loc[train_df["label"] <= 0.5].copy().reset_index(drop=True)
+        neg_df = neg_df.sample(frac=1.0, random_state=pairing_seed).reset_index(drop=True)
+        np_, nn_ = len(pos_df), len(neg_df)
+        n = min(np_, nn_)
+        if np_ == 0 or nn_ == 0:
+            raise ValueError(
+                f"paired training requires positives and negatives; got {np_} positives, {nn_} negatives."
+            )
+        if np_ != nn_:
+            print(
+                f"nlp_enjoyers_dataset_pairs: truncating positives/negatives to {n} rows each "
+                f"(had {np_} positives, {nn_} negatives)."
+            )
+        pos_df = pos_df.iloc[:n].reset_index(drop=True)
+        neg_df = neg_df.iloc[:n].reset_index(drop=True)
+
+        self._positive = QuestionAnswerDataset(
+            pos_df,
+            tokenizer,
+            max_length=max_length,
+            context_key=context_key,
+            tokenizer_truncation=tokenizer_truncation,
+            graph_only=graph_only,
+            question_prefix=question_prefix,
+        )
+        self._negative = QuestionAnswerDataset(
+            neg_df,
+            tokenizer,
+            max_length=max_length,
+            context_key=context_key,
+            tokenizer_truncation=tokenizer_truncation,
+            graph_only=graph_only,
+            question_prefix=question_prefix,
+        )
+
+    @property
+    def positives(self) -> QuestionAnswerDataset:
+        """All training positives after truncation (same length as :attr:`negatives`)."""
+        return self._positive
+
+    @property
+    def negatives(self) -> QuestionAnswerDataset:
+        """Training negatives aligned to positives (same length as :attr:`positives`)."""
+        return self._negative
+
+    def __len__(self) -> int:
+        return len(self._positive)
+
+    def __getitem__(
+        self, idx: int
+    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+        return self._positive[idx], self._negative[idx]
+
+
 def collate_batch(batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     return {
         "input_ids": torch.stack([item["input_ids"] for item in batch]),
         "attention_mask": torch.stack([item["attention_mask"] for item in batch]),
         "labels": torch.stack([item["labels"] for item in batch]),
+    }
+
+
+def collate_pair_batch(
+    batch: list[tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]],
+) -> dict[str, torch.Tensor]:
+    """Stack positives then negatives so each field has shape ``(2 * batch_size, ...)`` like a doubled batch."""
+    pos_col = collate_batch([pair[0] for pair in batch])
+    neg_col = collate_batch([pair[1] for pair in batch])
+    return {
+        "input_ids": torch.cat([pos_col["input_ids"], neg_col["input_ids"]], dim=0),
+        "attention_mask": torch.cat([pos_col["attention_mask"], neg_col["attention_mask"]], dim=0),
+        "labels": torch.cat([pos_col["labels"], neg_col["labels"]], dim=0),
     }
 
 
@@ -179,6 +263,7 @@ class LoaderBundle:
 class _DatasetPreset(str, Enum):
     LINEARIZED_GRAPH = "linearized_graph"
     NLP_ENJOYERS_DATASET = "nlp_enjoyers_dataset"
+    NLP_ENJOYERS_DATASET_PAIRS = "nlp_enjoyers_dataset_pairs"
 
 
 _PRESETS: dict[_DatasetPreset, dict[str, Any]] = {
@@ -191,6 +276,14 @@ _PRESETS: dict[_DatasetPreset, dict[str, Any]] = {
         "question_prefix": None,
     },
     _DatasetPreset.NLP_ENJOYERS_DATASET: {
+        "context_key": "linearized_graph",
+        "tokenizer_truncation": "only_second",
+        "graph_only": False,
+        "train_positives_only": False,
+        "linearize_style": "semicolon",
+        "question_prefix": "Eq: ",
+    },
+    _DatasetPreset.NLP_ENJOYERS_DATASET_PAIRS: {
         "context_key": "linearized_graph",
         "tokenizer_truncation": "only_second",
         "graph_only": False,
@@ -286,10 +379,11 @@ def get_dataset(
     train_ratio: float = 0.9,
     seed: int = 42,
     mock: bool = False,
-) -> QuestionAnswerDataset:
+) -> QuestionAnswerDataset | PositiveNegativePairDataset:
     """
     Same train-split preprocessing/tokenization pipeline as ``get_loaders``, but returns only the
-    **training** :class:`QuestionAnswerDataset` (no DataLoaders).
+    **training** split (either :class:`QuestionAnswerDataset` or :class:`PositiveNegativePairDataset`
+    when ``dataset`` is ``nlp_enjoyers_dataset_pairs``).
     """
     train_df, _dev_df, _test_df, preset = _prepare_split_dataframes(
         train_tsv_path,
@@ -300,6 +394,17 @@ def get_dataset(
         seed=seed,
         mock=mock,
     )
+    if _parse_dataset_id(dataset) == _DatasetPreset.NLP_ENJOYERS_DATASET_PAIRS:
+        return PositiveNegativePairDataset(
+            train_df,
+            tokenizer=tokenizer,
+            max_length=max_length,
+            context_key=preset["context_key"],
+            tokenizer_truncation=preset["tokenizer_truncation"],
+            graph_only=preset["graph_only"],
+            question_prefix=preset.get("question_prefix"),
+            pairing_seed=seed,
+        )
     return QuestionAnswerDataset(
         train_df,
         tokenizer=tokenizer,
@@ -346,15 +451,30 @@ def get_loaders(
     else:
         pin_memory = resolve_device(device).type == "cuda"
 
-    train_dataset = QuestionAnswerDataset(
-        train_df,
-        tokenizer=tokenizer,
-        max_length=max_length,
-        context_key=preset["context_key"],
-        tokenizer_truncation=preset["tokenizer_truncation"],
-        graph_only=preset["graph_only"],
-        question_prefix=preset.get("question_prefix"),
-    )
+    train_dataset: Dataset
+    if _parse_dataset_id(dataset) == _DatasetPreset.NLP_ENJOYERS_DATASET_PAIRS:
+        train_dataset = PositiveNegativePairDataset(
+            train_df,
+            tokenizer=tokenizer,
+            max_length=max_length,
+            context_key=preset["context_key"],
+            tokenizer_truncation=preset["tokenizer_truncation"],
+            graph_only=preset["graph_only"],
+            question_prefix=preset.get("question_prefix"),
+            pairing_seed=seed,
+        )
+        train_collate: Any = collate_pair_batch
+    else:
+        train_dataset = QuestionAnswerDataset(
+            train_df,
+            tokenizer=tokenizer,
+            max_length=max_length,
+            context_key=preset["context_key"],
+            tokenizer_truncation=preset["tokenizer_truncation"],
+            graph_only=preset["graph_only"],
+            question_prefix=preset.get("question_prefix"),
+        )
+        train_collate = collate_batch
     dev_dataset = QuestionAnswerDataset(
         dev_df,
         tokenizer=tokenizer,
@@ -380,7 +500,7 @@ def get_loaders(
         num_workers=num_workers,
         shuffle=True,
         drop_last=(not mock),
-        collate_fn=collate_batch,
+        collate_fn=train_collate,
         pin_memory=pin_memory,
     )
     val_loader = DataLoader(

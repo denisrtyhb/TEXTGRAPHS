@@ -11,7 +11,7 @@ def parse_args():
     parser.add_argument('--predictions_path', type=str, required=True,
                         help="Path to tsv file with predicted labels. Predicted labels should be stored in the"
                              "'prediction' column as binary labels: 0 or 1.")
-    parser.add_argument('--gold_labels_path', type=int, required=True,
+    parser.add_argument('--gold_labels_path', type=str, required=True,
                         help="Path to tsv file with ground truth labels. Ground truth labels should be stored in the"
                              "'correct' column as 'False' and 'True' strings.")
 

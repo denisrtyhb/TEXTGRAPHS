@@ -1,0 +1,20 @@
+{
+  "_comment": "Same as nlp_enjoyers but train uses PositiveNegativePairDataset; batch_size halved so each step still sees batch_size_eff = 16 * 2 = 32 graded examples.",
+  "dataset": "nlp_enjoyers_dataset_pairs",
+  "train_tsv": "data/tsv/train.tsv",
+  "test_tsv": "data/tsv/test.tsv",
+  "model_name": "sentence-transformers/all-mpnet-base-v2",
+  "checkpoint": "weights/nlp-enjoyers-pairs-baseline.pt",
+  "epochs": 5,
+  "batch_size": 16,
+  "lr": 3e-5,
+  "dropout": 0.2,
+  "max_length": 128,
+  "train_ratio": 0.9,
+  "seed": 42,
+  "num_workers": 0,
+  "device": "auto",
+  "mock": false,
+  "output": null,
+  "one_yes_per_question": true
+}
