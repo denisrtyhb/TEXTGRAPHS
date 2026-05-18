@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from torch.utils.data import DataLoader
+
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import f1_score
@@ -16,8 +20,23 @@ from .dataset import ALLOWED_DATASET_IDS, LoaderBundle, get_loaders
 from .device import resolve_device
 from .model import BertSimpleClassifier, build_classifier
 
-if TYPE_CHECKING:
-    from torch.utils.data import DataLoader
+
+def _freeze_encoder_bottom_layers(model: BertSimpleClassifier, n_layers: int) -> None:
+    """Freeze the bottom ``n_layers`` transformer blocks (embeddings stay trainable unless inside)."""
+    if n_layers <= 0:
+        return
+    inner = getattr(model.bert_text_encoder, "encoder", model.bert_text_encoder)
+    layer_mod = getattr(inner, "layer", None) or getattr(inner, "layers", None)
+    if layer_mod is None:
+        print("warning: could not find encoder layer module; skip --freeze-encoder-layers")
+        return
+    n = min(n_layers, len(layer_mod))
+    for i in range(n):
+        for p in layer_mod[i].parameters():
+            p.requires_grad = False
+    print(
+        f"Froze bottom {n} encoder block(s); upper {len(layer_mod) - n} block(s) + head trainable."
+    )
 
 
 MOCK_TRAIN_MAX_BATCHES = 10
@@ -31,6 +50,7 @@ def train_epoch(
     criterion: nn.Module,
     device: torch.device,
     *,
+    max_grad_norm: float = 0.0,
     max_batches: int | None = None,
 ) -> float:
     model.train()
@@ -45,6 +65,10 @@ def train_epoch(
         logits = model(inputs=input_ids, attention_mask=attention_mask).squeeze(1)
         loss = criterion(logits, labels)
         loss.backward()
+        if max_grad_norm and max_grad_norm > 0:
+            params_wg = [p for p in model.parameters() if p.grad is not None]
+            if params_wg:
+                torch.nn.utils.clip_grad_norm_(params_wg, max_grad_norm)
         optimizer.step()
         batch_loss = loss.item()
         num_batches += 1
@@ -104,6 +128,7 @@ def train(
     checkpoint_path: Path,
     device: torch.device,
     *,
+    max_grad_norm: float = 0.0,
     max_train_batches: int | None = None,
     max_val_batches: int | None = None,
 ) -> None:
@@ -114,7 +139,13 @@ def train(
     for epoch in range(n_epochs):
         start = time.time()
         train_loss = train_epoch(
-            model, train_loader, optimizer, criterion, device, max_batches=max_train_batches
+            model,
+            train_loader,
+            optimizer,
+            criterion,
+            device,
+            max_grad_norm=max_grad_norm,
+            max_batches=max_train_batches,
         )
         val_loss, val_f1 = val_epoch(
             model, val_loader, criterion, device, max_batches=max_val_batches
@@ -153,6 +184,27 @@ def build_train_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--dropout", type=float, default=0.2)
+    parser.add_argument(
+        "--weight-decay",
+        dest="weight_decay",
+        type=float,
+        default=0.0,
+        help="AdamW weight decay (0 = disabled).",
+    )
+    parser.add_argument(
+        "--max-grad-norm",
+        dest="max_grad_norm",
+        type=float,
+        default=0.0,
+        help="Clip gradient L2 norm after backward; 0 disables.",
+    )
+    parser.add_argument(
+        "--freeze-encoder-layers",
+        dest="freeze_encoder_layers",
+        type=int,
+        default=0,
+        help="Freeze bottom N encoder blocks (MPNet/BERT-style). Embeddings remain trainable.",
+    )
     parser.add_argument("--max-length", type=int, default=128)
     parser.add_argument("--train-ratio", type=float, default=0.9)
     parser.add_argument("--seed", type=int, default=42)
@@ -204,7 +256,12 @@ def run_training(args: argparse.Namespace) -> None:
     )
 
     model = build_classifier(args.model_name, dropout=args.dropout).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    wd = float(getattr(args, "weight_decay", 0.0) or 0.0)
+    max_gn = float(getattr(args, "max_grad_norm", 0.0) or 0.0)
+    n_frozen = int(getattr(args, "freeze_encoder_layers", 0) or 0)
+    _freeze_encoder_bottom_layers(model, n_frozen)
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    optimizer = optim.AdamW(trainable, lr=args.lr, weight_decay=wd)
     criterion = nn.BCEWithLogitsLoss()
     train(
         model,
@@ -215,6 +272,7 @@ def run_training(args: argparse.Namespace) -> None:
         n_epochs=1 if mock else args.epochs,
         checkpoint_path=args.checkpoint,
         device=device,
+        max_grad_norm=max_gn,
         max_train_batches=MOCK_TRAIN_MAX_BATCHES if mock else None,
         max_val_batches=MOCK_VAL_MAX_BATCHES if mock else None,
     )

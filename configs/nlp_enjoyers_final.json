@@ -1,0 +1,23 @@
+{
+  "_comment": "Targets train/val-good but test-poor: validation is question-held-out from the same TSV (still similar to train); test.tsv is a different split/distribution. Recipe: keep long graph context (384), slow the fine-tune (lower lr), regularize (AdamW weight_decay + higher dropout + grad clip), freeze lower MPNet blocks so the encoder does not overfit train/val idiosyncrasies. Best checkpoint is still chosen by val F1.",
+  "dataset": "nlp_enjoyers_dataset",
+  "train_tsv": "data/tsv/train.tsv",
+  "test_tsv": "data/tsv/test.tsv",
+  "model_name": "sentence-transformers/all-mpnet-base-v2",
+  "checkpoint": "weights/nlp-enjoyers-final.pt",
+  "epochs": 8,
+  "batch_size": 16,
+  "lr": 1.2e-5,
+  "weight_decay": 0.05,
+  "max_grad_norm": 1.0,
+  "freeze_encoder_layers": 5,
+  "dropout": 0.25,
+  "max_length": 384,
+  "train_ratio": 0.9,
+  "seed": 42,
+  "num_workers": 0,
+  "device": "auto",
+  "mock": false,
+  "output": null,
+  "one_yes_per_question": true
+}

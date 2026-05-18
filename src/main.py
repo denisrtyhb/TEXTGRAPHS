@@ -57,6 +57,9 @@ def train_defaults() -> dict[str, Any]:
         "dataset": ALLOWED_DATASET_IDS[0],
         "device": "auto",
         "mock": False,
+        "weight_decay": 0.0,
+        "max_grad_norm": 0.0,
+        "freeze_encoder_layers": 0,
     }
 
 
@@ -105,6 +108,8 @@ def _filter_config(mode: str, cfg: dict[str, Any]) -> tuple[dict[str, Any], list
     used: dict[str, Any] = {}
     ignored: list[str] = []
     for key, value in cfg.items():
+        if isinstance(key, str) and key.startswith("_"):
+            continue
         if key in allowed:
             used[key] = value
         else:
@@ -192,6 +197,14 @@ def _build_train_cli_parser() -> argparse.ArgumentParser:
     )
     pr.add_argument("--device", dest="device", default=s)
     pr.add_argument("--mock", dest="mock", action="store_true", default=s)
+    pr.add_argument("--weight-decay", dest="weight_decay", type=float, default=s)
+    pr.add_argument("--max-grad-norm", dest="max_grad_norm", type=float, default=s)
+    pr.add_argument(
+        "--freeze-encoder-layers",
+        dest="freeze_encoder_layers",
+        type=int,
+        default=s,
+    )
     return pr
 
 
