@@ -1,5 +1,25 @@
 # TextGraphs17-shared-task
 
+## Installation
+
+Requires **Python ≥ 3.9** (see `pyproject.toml`).
+
+```bash
+git clone https://github.com/denisrtyhb/TEXTGRAPHS.git
+cd TEXTGRAPHS
+pip install -e .
+```
+
+This installs the package in editable mode and dependencies (PyTorch, transformers, etc.). For a clean environment, create a virtualenv first, then run `pip install -e .`.
+
+Run the CLI from the repo root, for example:
+
+```bash
+python -m src.main train --help
+```
+
+(Optional) The `textgraphs` console script is registered by the install and points at the same entry point as `python -m src.main`.
+
 
 ## Data
 
